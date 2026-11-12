@@ -1,0 +1,83 @@
+@* Modal zum Anlegen/Bearbeiten eines Zeiteintrags. *@
+@if (Model is not null)
+{
+    <div class="tt-modal-backdrop" @onclick="OnCancel">
+        <div class="tt-modal" @onclick:stopPropagation="true">
+            <EditForm Model="Model" OnValidSubmit="Save">
+                <DataAnnotationsValidator />
+                <div class="tt-modal-head">
+                    <h3><i class="bi bi-clock-history"></i> @(Model.Id == 0 ? "Neuer Zeiteintrag" : "Zeiteintrag bearbeiten")</h3>
+                    <div class="tt-modal-sub">Arbeitszeit: <strong>@TimeFormat.Hm(NetMinutes)</strong></div>
+                </div>
+                <div class="tt-modal-body">
+                    @if (!LockProject)
+                    {
+                        <div class="form-group">
+                            <label>Projekt</label>
+                            <InputSelect @bind-Value="Model.TimeProjectId" class="form-control">
+                                <option value="0">— bitte wählen —</option>
+                                @foreach (var p in Projects)
+                                {
+                                    <option value="@p.Id">@p.Name</option>
+                                }
+                            </InputSelect>
+                            <ValidationMessage For="() => Model.TimeProjectId" class="validation-message" />
+                        </div>
+                    }
+                    <div class="tt-form-row">
+                        <div class="form-group">
+                            <label>Datum</label>
+                            <InputDate @bind-Value="Model.Date" class="form-control" />
+                        </div>
+                        <div class="form-group">
+                            <label>Start</label>
+                            <InputDate Type="InputDateType.Time" @bind-Value="Model.StartTime" class="form-control" />
+                        </div>
+                        <div class="form-group">
+                            <label>Ende</label>
+                            <InputDate Type="InputDateType.Time" @bind-Value="Model.EndTime" class="form-control" />
+                        </div>
+                        <div class="form-group">
+                            <label>Pause (min)</label>
+                            <InputNumber @bind-Value="Model.BreakMinutes" class="form-control" />
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Beschreibung</label>
+                        <InputTextArea @bind-Value="Model.Description" class="form-control" rows="2"
+                                       placeholder="Was wurde erledigt?" />
+                        <ValidationMessage For="() => Model.Description" class="validation-message" />
+                    </div>
+                    <div class="form-group">
+                        <label>Notizen (optional)</label>
+                        <InputTextArea @bind-Value="Model.Notes" class="form-control" rows="2" />
+                        <ValidationMessage For="() => Model.Notes" class="validation-message" />
+                    </div>
+                </div>
+                <div class="tt-modal-actions">
+                    <button type="button" class="btn" @onclick="OnCancel">Abbrechen</button>
+                    <button type="submit" class="btn btn-primary">Speichern</button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public TimeEntry? Model { get; set; }
+    [Parameter] public List<TimeProject> Projects { get; set; } = new();
+
+    /// <summary>Projektauswahl ausblenden (wenn im Kontext eines festen Projekts geöffnet).</summary>
+    [Parameter] public bool LockProject { get; set; }
+
+    [Parameter] public EventCallback<TimeEntry> OnSave { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private int NetMinutes => Model is null ? 0 : Math.Max(0, Model.GrossMinutes - Model.BreakMinutes);
+
+    private async Task Save()
+    {
+        if (Model is not null)
+            await OnSave.InvokeAsync(Model);
+    }
+}

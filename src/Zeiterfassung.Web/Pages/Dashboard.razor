@@ -1,0 +1,115 @@
+@page "/"
+@inject TimeTrackingService Service
+
+<PageTitle>Zeiterfassung · Dashboard</PageTitle>
+
+<div class="tt-page">
+    <div class="admin-header">
+        <h1>Zeiterfassung</h1>
+        <div class="tt-header-actions">
+            <a href="entries" class="btn"><i class="bi bi-list-ul"></i> Einträge</a>
+            <a href="projects" class="btn"><i class="bi bi-kanban"></i> Projekte</a>
+            <a href="reports" class="btn"><i class="bi bi-bar-chart"></i> Auswertungen</a>
+        </div>
+    </div>
+
+    @* ── Live-Zeiterfassung ─────────────────────────────────────────── *@
+    <LiveTimer OnChanged="RefreshAsync" />
+
+    @if (_stats is null)
+    {
+        <div class="tt-loading"><span class="tt-spinner"></span> Wird geladen…</div>
+    }
+    else
+    {
+        @* ── Kennzahlen ────────────────────────────────────────────── *@
+        <div class="tt-stats-grid">
+            <div class="tt-stat">
+                <div class="tt-stat-icon" style="color:var(--accent)"><i class="bi bi-sun"></i></div>
+                <div><div class="tt-stat-value">@TimeFormat.Hm(_stats.TodayMinutes)</div>
+                    <div class="tt-stat-label">Heute</div></div>
+            </div>
+            <div class="tt-stat">
+                <div class="tt-stat-icon" style="color:var(--blue)"><i class="bi bi-calendar-week"></i></div>
+                <div><div class="tt-stat-value">@TimeFormat.Hm(_stats.WeekMinutes)</div>
+                    <div class="tt-stat-label">Diese Woche</div></div>
+            </div>
+            <div class="tt-stat">
+                <div class="tt-stat-icon" style="color:var(--green)"><i class="bi bi-calendar-month"></i></div>
+                <div><div class="tt-stat-value">@TimeFormat.Hm(_stats.MonthMinutes)</div>
+                    <div class="tt-stat-label">Diesen Monat</div></div>
+            </div>
+            <div class="tt-stat">
+                <div class="tt-stat-icon" style="color:var(--accent)"><i class="bi bi-hourglass-split"></i></div>
+                <div><div class="tt-stat-value">@TimeFormat.Hm(_stats.TotalMinutes)</div>
+                    <div class="tt-stat-label">Gesamt</div></div>
+            </div>
+            <div class="tt-stat">
+                <div class="tt-stat-icon" style="color:var(--blue)"><i class="bi bi-kanban"></i></div>
+                <div><div class="tt-stat-value">@_stats.ActiveProjectCount</div>
+                    <div class="tt-stat-label">Aktive Projekte</div></div>
+            </div>
+            <div class="tt-stat">
+                <div class="tt-stat-icon" style="color:var(--green)"><i class="bi bi-clock-history"></i></div>
+                <div><div class="tt-stat-value">@_stats.TotalEntryCount</div>
+                    <div class="tt-stat-label">Einträge</div></div>
+            </div>
+        </div>
+
+        @* ── Mini-Diagramme ────────────────────────────────────────── *@
+        <div class="tt-grid-2">
+            <div class="tt-card">
+                <div class="tt-card-head"><h3><i class="bi bi-pie-chart"></i> Stunden pro Projekt</h3></div>
+                <ProjectBars Items="_projectHours" />
+            </div>
+            <div class="tt-card">
+                <div class="tt-card-head"><h3><i class="bi bi-bar-chart"></i> Letzte Wochen</h3></div>
+                <BarChart Items="_weekly" />
+            </div>
+        </div>
+
+        @* ── Heutige Einträge ──────────────────────────────────────── *@
+        <div class="tt-card">
+            <div class="tt-card-head">
+                <h3><i class="bi bi-calendar-check"></i> Heute erfasst</h3>
+                <span class="admin-count">@_todayEntries.Count</span>
+            </div>
+            @if (_todayEntries.Count == 0)
+            {
+                <div class="tt-chart-empty">Heute noch keine Zeit erfasst.</div>
+            }
+            else
+            {
+                <div class="tt-entry-list">
+                    @foreach (var e in _todayEntries)
+                    {
+                        <div class="tt-entry-row">
+                            <span class="tt-dot" style="background:@(e.TimeProject?.Color ?? "#999")"></span>
+                            <span class="tt-entry-project">@e.TimeProject?.Name</span>
+                            <span class="tt-entry-time">@e.StartTime.ToString("HH:mm")–@e.EndTime.ToString("HH:mm")</span>
+                            <span class="tt-entry-desc">@e.Description</span>
+                            <span class="tt-entry-dur">@TimeFormat.Hm(e.DurationMinutes)</span>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private DashboardStats? _stats;
+    private List<ProjectChartItem> _projectHours = new();
+    private List<PeriodChartItem> _weekly = new();
+    private List<TimeEntry> _todayEntries = new();
+
+    protected override async Task OnInitializedAsync() => await RefreshAsync();
+
+    private async Task RefreshAsync()
+    {
+        _stats = await Service.GetDashboardStatsAsync();
+        _projectHours = await Service.GetHoursPerProjectAsync();
+        _weekly = await Service.GetHoursPerWeekAsync(8);
+        _todayEntries = await Service.GetEntriesForDateAsync(DateOnly.FromDateTime(DateTime.Now));
+    }
+}

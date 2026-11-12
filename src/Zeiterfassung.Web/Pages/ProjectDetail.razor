@@ -1,0 +1,161 @@
+@page "/projects/{Id:int}"
+@inject TimeTrackingService Service
+@inject ToastService Toasts
+@inject NavigationManager Nav
+
+<PageTitle>Zeiterfassung · Projektdetails</PageTitle>
+
+<div class="tt-page">
+    @if (_project is null)
+    {
+        <div class="tt-loading"><span class="tt-spinner"></span> Wird geladen…</div>
+    }
+    else
+    {
+        <div class="admin-header">
+            <h1>
+                <span class="tt-project-icon tt-project-icon-lg" style="color:@_project.Color; background:color-mix(in srgb, @_project.Color 15%, transparent)">
+                    <i class="bi @(string.IsNullOrWhiteSpace(_project.Icon) ? "bi-kanban" : _project.Icon)"></i>
+                </span>
+                @_project.Name
+            </h1>
+            <div class="tt-header-actions">
+                <a href="projects" class="btn"><i class="bi bi-arrow-left"></i> Zurück</a>
+                <button class="btn btn-primary" @onclick="NewEntry"><i class="bi bi-plus-lg"></i> Zeiteintrag</button>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_project.Description))
+        {
+            <p class="tt-detail-desc">@_project.Description</p>
+        }
+
+        <div class="tt-stats-grid tt-stats-3">
+            <div class="tt-stat">
+                <div class="tt-stat-icon" style="color:var(--accent)"><i class="bi bi-hourglass-split"></i></div>
+                <div><div class="tt-stat-value">@TimeFormat.Hm(TotalMinutes)</div>
+                    <div class="tt-stat-label">Gesamtzeit</div></div>
+            </div>
+            <div class="tt-stat">
+                <div class="tt-stat-icon" style="color:var(--blue)"><i class="bi bi-clock-history"></i></div>
+                <div><div class="tt-stat-value">@_entries.Count</div>
+                    <div class="tt-stat-label">Einträge</div></div>
+            </div>
+            <div class="tt-stat">
+                <div class="tt-stat-icon" style="color:var(--green)"><i class="bi bi-flag"></i></div>
+                <div><div class="tt-stat-value">@(_project.Status == ProjectStatus.Active ? "Aktiv" : "Fertig")</div>
+                    <div class="tt-stat-label">Status</div></div>
+            </div>
+        </div>
+
+        <div class="tt-card">
+            <div class="tt-card-head"><h3><i class="bi bi-list-ul"></i> Zeiteinträge</h3></div>
+            @if (_entries.Count == 0)
+            {
+                <div class="tt-chart-empty">Noch keine Zeiteinträge für dieses Projekt.</div>
+            }
+            else
+            {
+                <table class="admin-table tt-table">
+                    <thead>
+                        <tr>
+                            <th>Datum</th><th>Start</th><th>Ende</th><th>Pause</th>
+                            <th>Dauer</th><th>Beschreibung</th><th>Aktionen</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var e in _entries)
+                        {
+                            <tr>
+                                <td>@e.Date.ToString("dd.MM.yyyy")</td>
+                                <td>@e.StartTime.ToString("HH:mm")</td>
+                                <td>@e.EndTime.ToString("HH:mm")</td>
+                                <td>@(e.BreakMinutes > 0 ? $"{e.BreakMinutes}m" : "—")</td>
+                                <td><strong>@TimeFormat.Hm(e.DurationMinutes)</strong></td>
+                                <td class="tt-desc-cell">
+                                    @e.Description
+                                    @if (e.FromTimer) { <i class="bi bi-stopwatch tt-timer-flag" title="aus Live-Timer"></i> }
+                                </td>
+                                <td>
+                                    <div class="table-actions">
+                                        <button class="btn btn-sm btn-warning" @onclick="() => EditEntry(e)"><i class="bi bi-pencil"></i></button>
+                                        <button class="btn btn-sm btn-danger" @onclick="() => DeleteEntry(e)"><i class="bi bi-trash"></i></button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+</div>
+
+<EntryEditor Model="_editEntry" Projects="_projectList" LockProject="true"
+             OnSave="SaveEntry" OnCancel="() => _editEntry = null" />
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private TimeProject? _project;
+    private List<TimeEntry> _entries = new();
+    private List<TimeProject> _projectList = new();
+    private TimeEntry? _editEntry;
+    private ConfirmDialog _confirm = default!;
+
+    private int TotalMinutes => _entries.Sum(e => e.DurationMinutes);
+
+    protected override async Task OnParametersSetAsync() => await Load();
+
+    private async Task Load()
+    {
+        _project = await Service.GetProjectByIdAsync(Id);
+        if (_project is null)
+        {
+            Nav.NavigateTo("projects");
+            return;
+        }
+        _projectList = new List<TimeProject> { _project };
+        _entries = await Service.GetEntriesAsync(new TimeEntryFilter { ProjectId = Id });
+    }
+
+    private void NewEntry()
+    {
+        var now = TimeOnly.FromDateTime(DateTime.Now);
+        _editEntry = new TimeEntry
+        {
+            TimeProjectId = Id,
+            Date = DateOnly.FromDateTime(DateTime.Now),
+            StartTime = now,
+            EndTime = now
+        };
+    }
+
+    private void EditEntry(TimeEntry e) => _editEntry = new TimeEntry
+    {
+        Id = e.Id, TimeProjectId = e.TimeProjectId, Date = e.Date,
+        StartTime = e.StartTime, EndTime = e.EndTime, BreakMinutes = e.BreakMinutes,
+        Description = e.Description, Notes = e.Notes, FromTimer = e.FromTimer,
+        CreatedAt = e.CreatedAt
+    };
+
+    private async Task SaveEntry(TimeEntry entry)
+    {
+        if (entry.Id == 0) await Service.AddEntryAsync(entry);
+        else await Service.UpdateEntryAsync(entry);
+        _editEntry = null;
+        Toasts.Success("Zeiteintrag gespeichert.");
+        await Load();
+    }
+
+    private async Task DeleteEntry(TimeEntry e)
+    {
+        if (await _confirm.ShowAsync("Diesen Zeiteintrag löschen?", "Eintrag löschen"))
+        {
+            await Service.DeleteEntryAsync(e.Id);
+            Toasts.Success("Zeiteintrag gelöscht.");
+            await Load();
+        }
+    }
+}

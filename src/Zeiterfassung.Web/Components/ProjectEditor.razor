@@ -1,0 +1,80 @@
+@* Modal zum Anlegen/Bearbeiten eines Zeiterfassungs-Projekts. *@
+@if (Model is not null)
+{
+    <div class="tt-modal-backdrop" @onclick="OnCancel">
+        <div class="tt-modal" @onclick:stopPropagation="true">
+            <EditForm Model="Model" OnValidSubmit="Save">
+                <DataAnnotationsValidator />
+                <div class="tt-modal-head">
+                    <h3><i class="bi @(string.IsNullOrWhiteSpace(Model.Icon) ? "bi-kanban" : Model.Icon)"></i>
+                        @(Model.Id == 0 ? "Neues Projekt" : "Projekt bearbeiten")</h3>
+                </div>
+                <div class="tt-modal-body">
+                    <div class="form-group">
+                        <label>Name</label>
+                        <InputText @bind-Value="Model.Name" class="form-control" placeholder="Projektname" />
+                        <ValidationMessage For="() => Model.Name" class="validation-message" />
+                    </div>
+                    <div class="form-group">
+                        <label>Beschreibung (optional)</label>
+                        <InputTextArea @bind-Value="Model.Description" class="form-control" rows="2" />
+                        <ValidationMessage For="() => Model.Description" class="validation-message" />
+                    </div>
+                    <div class="tt-form-row">
+                        <div class="form-group">
+                            <label>Farbe</label>
+                            <div class="tt-color-row">
+                                <input type="color" @bind="Model.Color" class="tt-color-input" />
+                                <InputText @bind-Value="Model.Color" class="form-control" />
+                            </div>
+                            <ValidationMessage For="() => Model.Color" class="validation-message" />
+                        </div>
+                        <div class="form-group">
+                            <label>Status</label>
+                            <InputSelect @bind-Value="Model.Status" class="form-control">
+                                <option value="@ProjectStatus.Active">Aktiv</option>
+                                <option value="@ProjectStatus.Completed">Abgeschlossen</option>
+                            </InputSelect>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Icon (Bootstrap-Icons-Klasse, optional)</label>
+                        <div class="tt-color-row">
+                            <span class="tt-icon-preview"><i class="bi @(string.IsNullOrWhiteSpace(Model.Icon) ? "bi-kanban" : Model.Icon)"></i></span>
+                            <InputText @bind-Value="Model.Icon" class="form-control" placeholder="z. B. bi-code-slash" />
+                        </div>
+                        <div class="tt-icon-suggestions">
+                            @foreach (var ic in IconSuggestions)
+                            {
+                                <button type="button" class="tt-icon-chip @(Model.Icon == ic ? "active" : "")"
+                                        @onclick="() => Model.Icon = ic" title="@ic"><i class="bi @ic"></i></button>
+                            }
+                        </div>
+                    </div>
+                </div>
+                <div class="tt-modal-actions">
+                    <button type="button" class="btn" @onclick="OnCancel">Abbrechen</button>
+                    <button type="submit" class="btn btn-primary">Speichern</button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public TimeProject? Model { get; set; }
+    [Parameter] public EventCallback<TimeProject> OnSave { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private static readonly string[] IconSuggestions =
+    {
+        "bi-kanban", "bi-code-slash", "bi-briefcase", "bi-book", "bi-laptop",
+        "bi-palette", "bi-graph-up", "bi-bug", "bi-gear", "bi-mortarboard"
+    };
+
+    private async Task Save()
+    {
+        if (Model is not null)
+            await OnSave.InvokeAsync(Model);
+    }
+}

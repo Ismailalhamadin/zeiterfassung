@@ -1,0 +1,48 @@
+@* Wiederverwendbarer Bestätigungsdialog. Aufruf: if (await confirm.ShowAsync("Wirklich löschen?")) { ... } *@
+@if (_visible)
+{
+    <div class="tt-modal-backdrop" @onclick="Cancel">
+        <div class="tt-modal tt-modal-sm" @onclick:stopPropagation="true">
+            <div class="tt-modal-head">
+                <h3>@_title</h3>
+            </div>
+            <div class="tt-modal-body">
+                <p>@_message</p>
+            </div>
+            <div class="tt-modal-actions">
+                <button type="button" class="btn" @onclick="Cancel">Abbrechen</button>
+                <button type="button" class="btn btn-danger" @onclick="Confirm">@_confirmText</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _visible;
+    private string _title = "Bestätigen";
+    private string _message = "";
+    private string _confirmText = "Löschen";
+    private TaskCompletionSource<bool>? _tcs;
+
+    /// <summary>Zeigt den Dialog und liefert true, wenn der Nutzer bestätigt.</summary>
+    public Task<bool> ShowAsync(string message, string title = "Bestätigen", string confirmText = "Löschen")
+    {
+        _message = message;
+        _title = title;
+        _confirmText = confirmText;
+        _visible = true;
+        _tcs = new TaskCompletionSource<bool>();
+        StateHasChanged();
+        return _tcs.Task;
+    }
+
+    private void Confirm() => Close(true);
+    private void Cancel() => Close(false);
+
+    private void Close(bool result)
+    {
+        _visible = false;
+        _tcs?.TrySetResult(result);
+        _tcs = null;
+    }
+}

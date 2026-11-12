@@ -1,0 +1,59 @@
+@page "/reports"
+@inject TimeTrackingService Service
+
+<PageTitle>Zeiterfassung · Auswertungen</PageTitle>
+
+<div class="tt-page">
+    <div class="admin-header">
+        <h1>Auswertungen</h1>
+        <div class="tt-header-actions">
+            <a href="./" class="btn"><i class="bi bi-speedometer2"></i> Dashboard</a>
+            <a href="entries" class="btn"><i class="bi bi-download"></i> Export</a>
+        </div>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="tt-loading"><span class="tt-spinner"></span> Wird geladen…</div>
+    }
+    else
+    {
+        <div class="tt-card">
+            <div class="tt-card-head"><h3><i class="bi bi-graph-up"></i> Arbeitszeitverlauf (30 Tage)</h3></div>
+            <TrendChart Items="_trend" />
+        </div>
+
+        <div class="tt-grid-2">
+            <div class="tt-card">
+                <div class="tt-card-head"><h3><i class="bi bi-pie-chart"></i> Stunden pro Projekt</h3></div>
+                <ProjectBars Items="_projectHours" />
+            </div>
+            <div class="tt-card">
+                <div class="tt-card-head"><h3><i class="bi bi-bar-chart"></i> Stunden pro Woche</h3></div>
+                <BarChart Items="_weekly" Color="var(--blue)" />
+            </div>
+        </div>
+
+        <div class="tt-card">
+            <div class="tt-card-head"><h3><i class="bi bi-bar-chart-steps"></i> Stunden pro Monat</h3></div>
+            <BarChart Items="_monthly" Color="var(--green)" />
+        </div>
+    }
+</div>
+
+@code {
+    private bool _loading = true;
+    private List<ProjectChartItem> _projectHours = new();
+    private List<PeriodChartItem> _weekly = new();
+    private List<PeriodChartItem> _monthly = new();
+    private List<PeriodChartItem> _trend = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _projectHours = await Service.GetHoursPerProjectAsync();
+        _weekly = await Service.GetHoursPerWeekAsync(10);
+        _monthly = await Service.GetHoursPerMonthAsync(6);
+        _trend = await Service.GetDailyTrendAsync(30);
+        _loading = false;
+    }
+}

@@ -1,0 +1,28 @@
+@* Vertikales Balkendiagramm für Zeitreihen (Stunden pro Woche/Monat). Reines HTML/CSS. *@
+@if (Items is null || Items.Count == 0)
+{
+    <div class="tt-chart-empty">Keine Daten für diesen Zeitraum.</div>
+}
+else
+{
+    <div class="tt-barchart">
+        @foreach (var item in Items)
+        {
+            var pct = Max > 0 ? (int)Math.Round(item.Minutes * 100.0 / Max) : 0;
+            <div class="tt-bar-col" title="@item.Label: @TimeFormat.Hm(item.Minutes)">
+                <div class="tt-bar-value">@(item.Minutes > 0 ? $"{item.Minutes / 60.0:0.0}" : "")</div>
+                <div class="tt-bar-track">
+                    <div class="tt-bar-fill" style="height: @(pct)%; background: @Color;"></div>
+                </div>
+                <div class="tt-bar-label">@item.Label</div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public List<PeriodChartItem>? Items { get; set; }
+    [Parameter] public string Color { get; set; } = "var(--accent)";
+
+    private int Max => Items is { Count: > 0 } ? Items.Max(i => i.Minutes) : 0;
+}

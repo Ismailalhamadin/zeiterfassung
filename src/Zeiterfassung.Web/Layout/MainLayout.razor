@@ -1,0 +1,58 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject NavigationManager Nav
+
+<DemoBanner />
+
+<div class="admin-layout @(_navOpen ? "nav-open" : "")">
+    @* Handy: Die Seitenleiste wird zur Schublade. *@
+    <button type="button" class="admin-nav-toggle" @onclick="ToggleNav" aria-label="Menü umschalten">
+        <i class="bi @(_navOpen ? "bi-x-lg" : "bi-list")"></i>
+    </button>
+    <div class="admin-nav-backdrop" @onclick="CloseNav"></div>
+
+    <nav class="admin-sidebar" aria-label="Hauptmenü">
+        <div class="admin-brand">
+            <span class="admin-brand-name"><i class="bi bi-stopwatch"></i> Zeiterfassung</span>
+            <div class="admin-brand-sub">Browser-Demo</div>
+        </div>
+        <div class="admin-nav">
+            <div class="admin-nav-group is-open">
+                <ul class="admin-nav-list">
+                    <li><NavLink href="./" Match="NavLinkMatch.All" ActiveClass="is-active"><i class="bi bi-speedometer2"></i> Dashboard</NavLink></li>
+                    <li><NavLink href="entries" ActiveClass="is-active"><i class="bi bi-list-ul"></i> Einträge</NavLink></li>
+                    <li><NavLink href="projects" ActiveClass="is-active"><i class="bi bi-kanban"></i> Projekte</NavLink></li>
+                    <li><NavLink href="calendar" ActiveClass="is-active"><i class="bi bi-calendar-month"></i> Kalender</NavLink></li>
+                    <li><NavLink href="reports" ActiveClass="is-active"><i class="bi bi-bar-chart"></i> Auswertungen</NavLink></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <main class="admin-main">
+        <div class="admin-content">
+            @Body
+        </div>
+    </main>
+
+    <ToastHost />
+</div>
+
+@code {
+    private bool _navOpen;
+
+    protected override void OnInitialized() => Nav.LocationChanged += OnLocationChanged;
+
+    private void ToggleNav() => _navOpen = !_navOpen;
+    private void CloseNav() => _navOpen = false;
+
+    /// <summary>Auf dem Handy schließt sich die Schublade nach dem Antippen eines Menüpunkts von selbst.</summary>
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        if (!_navOpen) return;
+        _navOpen = false;
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+}

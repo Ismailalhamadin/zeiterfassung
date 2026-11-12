@@ -1,0 +1,210 @@
+@page "/entries"
+@inject TimeTrackingService Service
+@inject TimeTrackingExportService Export
+@inject IJSRuntime JS
+@inject ToastService Toasts
+
+<PageTitle>Zeiterfassung · Einträge</PageTitle>
+
+<div class="tt-page">
+    <div class="admin-header">
+        <h1>Zeiteinträge</h1>
+        <div class="tt-header-actions">
+            <a href="./" class="btn"><i class="bi bi-speedometer2"></i> Dashboard</a>
+            <button class="btn btn-primary" @onclick="NewEntry"><i class="bi bi-plus-lg"></i> Neuer Eintrag</button>
+        </div>
+    </div>
+
+    @* ── Filterleiste ─────────────────────────────────────────────── *@
+    <div class="tt-filterbar">
+        <div class="tt-search">
+            <i class="bi bi-search"></i>
+            <input class="form-control" placeholder="Beschreibung, Notizen, Projekt…"
+                   @bind="_filter.Search" @bind:event="oninput" @bind:after="Load" />
+        </div>
+        <select class="form-control tt-filter" @bind="_filter.ProjectId" @bind:after="Load">
+            <option value="0">Alle Projekte</option>
+            @foreach (var p in _projects)
+            {
+                <option value="@p.Id">@p.Name</option>
+            }
+        </select>
+        <select class="form-control tt-filter" @bind="_month" @bind:after="Load">
+            <option value="0">Ganzes Jahr</option>
+            @for (var m = 1; m <= 12; m++)
+            {
+                <option value="@m">@MonthName(m)</option>
+            }
+        </select>
+        <select class="form-control tt-filter" @bind="_year" @bind:after="Load">
+            <option value="0">Alle Jahre</option>
+            @foreach (var y in _years)
+            {
+                <option value="@y">@y</option>
+            }
+        </select>
+        <div class="tt-daterange">
+            <input type="date" class="form-control" @bind="_from" @bind:after="Load" title="Von" />
+            <span>–</span>
+            <input type="date" class="form-control" @bind="_to" @bind:after="Load" title="Bis" />
+        </div>
+        <button class="btn" @onclick="ResetFilter" title="Filter zurücksetzen"><i class="bi bi-x-circle"></i></button>
+    </div>
+
+    @* ── Export ───────────────────────────────────────────────────── *@
+    <div class="tt-export-row">
+        <span class="tt-export-label"><i class="bi bi-download"></i> Export:</span>
+        <button class="btn btn-sm" @onclick="ExportCsv"><i class="bi bi-filetype-csv"></i> CSV</button>
+        <button class="btn btn-sm" disabled title="In der Demo deaktiviert"><i class="bi bi-file-earmark-excel"></i> Excel</button>
+        <button class="btn btn-sm" disabled title="In der Demo deaktiviert"><i class="bi bi-file-earmark-pdf"></i> PDF</button>
+        <span class="tt-export-sum">@_entries.Count Einträge · @TimeFormat.Hm(TotalMinutes)</span>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="tt-loading"><span class="tt-spinner"></span> Wird geladen…</div>
+    }
+    else if (_entries.Count == 0)
+    {
+        <div class="tt-chart-empty">Keine Einträge für die aktuelle Auswahl.</div>
+    }
+    else
+    {
+        <table class="admin-table tt-table">
+            <thead>
+                <tr>
+                    <th>Datum</th><th>Projekt</th><th>Start</th><th>Ende</th>
+                    <th>Pause</th><th>Dauer</th><th>Beschreibung</th><th>Aktionen</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var e in _entries)
+                {
+                    <tr>
+                        <td>@e.Date.ToString("dd.MM.yyyy")</td>
+                        <td>
+                            <span class="tt-dot" style="background:@(e.TimeProject?.Color ?? "#999")"></span>
+                            @e.TimeProject?.Name
+                        </td>
+                        <td>@e.StartTime.ToString("HH:mm")</td>
+                        <td>@e.EndTime.ToString("HH:mm")</td>
+                        <td>@(e.BreakMinutes > 0 ? $"{e.BreakMinutes}m" : "—")</td>
+                        <td><strong>@TimeFormat.Hm(e.DurationMinutes)</strong></td>
+                        <td class="tt-desc-cell">
+                            @e.Description
+                            @if (e.FromTimer) { <i class="bi bi-stopwatch tt-timer-flag" title="aus Live-Timer"></i> }
+                        </td>
+                        <td>
+                            <div class="table-actions">
+                                <button class="btn btn-sm btn-warning" @onclick="() => EditEntry(e)"><i class="bi bi-pencil"></i></button>
+                                <button class="btn btn-sm btn-danger" @onclick="() => DeleteEntry(e)"><i class="bi bi-trash"></i></button>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+<EntryEditor Model="_editEntry" Projects="_projects" OnSave="SaveEntry" OnCancel="() => _editEntry = null" />
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    private readonly TimeEntryFilter _filter = new() { ProjectId = 0 };
+    private List<TimeEntry> _entries = new();
+    private List<TimeProject> _projects = new();
+    private List<int> _years = new();
+    private bool _loading = true;
+
+    // Roh-Bindungen (0 / null bedeuten „kein Filter").
+    private int _month;
+    private int _year;
+    private DateOnly? _from;
+    private DateOnly? _to;
+
+    private TimeEntry? _editEntry;
+    private ConfirmDialog _confirm = default!;
+
+    private int TotalMinutes => _entries.Sum(e => e.DurationMinutes);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _projects = await Service.GetProjectsAsync(includeArchived: true);
+        _years = await Service.GetYearsWithEntriesAsync();
+        if (_years.Count == 0) _years.Add(DateTime.Now.Year);
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        _loading = true;
+        _filter.Month = _month > 0 ? _month : null;
+        _filter.Year = _year > 0 ? _year : null;
+        _filter.From = _from;
+        _filter.To = _to;
+        _entries = await Service.GetEntriesAsync(_filter);
+        _loading = false;
+    }
+
+    private async Task ResetFilter()
+    {
+        _filter.Search = "";
+        _filter.ProjectId = 0;
+        _month = 0; _year = 0; _from = null; _to = null;
+        await Load();
+    }
+
+    private async Task ExportCsv()
+    {
+        var result = await Export.ExportCsvAsync(_filter);
+        await JS.InvokeVoidAsync("demo.download", result.FileName, result.ContentType, Convert.ToBase64String(result.Content));
+        Toasts.Success("CSV wurde heruntergeladen.");
+    }
+
+    private void NewEntry()
+    {
+        var now = TimeOnly.FromDateTime(DateTime.Now);
+        _editEntry = new TimeEntry
+        {
+            TimeProjectId = _filter.ProjectId is > 0 ? _filter.ProjectId.Value : 0,
+            Date = DateOnly.FromDateTime(DateTime.Now),
+            StartTime = now,
+            EndTime = now
+        };
+    }
+
+    private void EditEntry(TimeEntry e) => _editEntry = new TimeEntry
+    {
+        Id = e.Id, TimeProjectId = e.TimeProjectId, Date = e.Date,
+        StartTime = e.StartTime, EndTime = e.EndTime, BreakMinutes = e.BreakMinutes,
+        Description = e.Description, Notes = e.Notes, FromTimer = e.FromTimer, CreatedAt = e.CreatedAt
+    };
+
+    private async Task SaveEntry(TimeEntry entry)
+    {
+        if (entry.TimeProjectId <= 0)
+        {
+            Toasts.Warning("Bitte ein Projekt auswählen.");
+            return;
+        }
+        if (entry.Id == 0) await Service.AddEntryAsync(entry);
+        else await Service.UpdateEntryAsync(entry);
+        _editEntry = null;
+        Toasts.Success("Zeiteintrag gespeichert.");
+        await Load();
+    }
+
+    private async Task DeleteEntry(TimeEntry e)
+    {
+        if (await _confirm.ShowAsync("Diesen Zeiteintrag löschen?", "Eintrag löschen"))
+        {
+            await Service.DeleteEntryAsync(e.Id);
+            Toasts.Success("Zeiteintrag gelöscht.");
+            await Load();
+        }
+    }
+
+    private static string MonthName(int m) =>
+        System.Globalization.CultureInfo.GetCultureInfo("de-DE").DateTimeFormat.GetMonthName(m);
+}

@@ -1,0 +1,26 @@
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+@* Pflichtband jeder Demo: sagt, dass es Beispieldaten sind, und führt zurück zur Webseite und zum Code. *@
+<div class="demo-banner" role="status">
+    <span class="demo-text"><i class="bi bi-info-circle"></i> Demo mit Beispieldaten – Änderungen werden nicht gespeichert.</span>
+    <div class="demo-actions">
+        <button type="button" class="demo-btn" @onclick="Reset"><i class="bi bi-arrow-counterclockwise"></i> Zurücksetzen</button>
+        <a href="@HomeUrl">← ialhamadin.dev</a>
+        <a href="@CodeUrl" target="_blank" rel="noopener">Code auf GitHub</a>
+    </div>
+</div>
+
+@code {
+    private const string HomeUrl = "https://ialhamadin.dev/";
+    private const string CodeUrl = "https://github.com/Ismailalhamadin/zeiterfassung";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Die Seitenleiste braucht die echte Höhe des Bands (es bricht auf dem Handy um).
+        if (firstRender) await JS.InvokeVoidAsync("demo.watchBanner");
+    }
+
+    /// <summary>Die Datenbank liegt nur im Speicher: Seite neu laden = Beispieldaten wie am Anfang.</summary>
+    private void Reset() => Nav.NavigateTo(Nav.BaseUri, forceLoad: true);
+}

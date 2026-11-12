@@ -1,0 +1,151 @@
+@page "/projects"
+@inject TimeTrackingService Service
+@inject ToastService Toasts
+
+<PageTitle>Zeiterfassung · Projekte</PageTitle>
+
+<div class="tt-page">
+    <div class="admin-header">
+        <h1>Projekte</h1>
+        <div class="tt-header-actions">
+            <a href="./" class="btn"><i class="bi bi-speedometer2"></i> Dashboard</a>
+            <button class="btn btn-primary" @onclick="NewProject"><i class="bi bi-plus-lg"></i> Neues Projekt</button>
+        </div>
+    </div>
+
+    <div class="tt-toolbar">
+        <div class="tt-search">
+            <i class="bi bi-search"></i>
+            <input class="form-control" placeholder="Projekt suchen…"
+                   @bind="_search" @bind:event="oninput" @bind:after="Load" />
+        </div>
+        <select class="form-control tt-filter" @bind="_statusFilter" @bind:after="Load">
+            <option value="">Alle Status</option>
+            <option value="Active">Aktiv</option>
+            <option value="Completed">Abgeschlossen</option>
+        </select>
+        <label class="tt-check">
+            <input type="checkbox" @bind="_showArchived" @bind:after="Load" /> Archivierte anzeigen
+        </label>
+    </div>
+
+    @if (_projects is null)
+    {
+        <div class="tt-loading"><span class="tt-spinner"></span> Wird geladen…</div>
+    }
+    else if (_projects.Count == 0)
+    {
+        <div class="tt-chart-empty">Keine Projekte gefunden.</div>
+    }
+    else
+    {
+        <div class="tt-project-grid">
+            @foreach (var p in _projects)
+            {
+                <div class="tt-project-card @(p.IsArchived ? "is-archived" : "")" style="border-top-color:@p.Color">
+                    <div class="tt-project-top">
+                        <span class="tt-project-icon" style="background:color-mix(in srgb, @p.Color 15%, transparent); color:@p.Color">
+                            <i class="bi @(string.IsNullOrWhiteSpace(p.Icon) ? "bi-kanban" : p.Icon)"></i>
+                        </span>
+                        <div class="tt-project-titlebox">
+                            <a class="tt-project-name" href="projects/@p.Id">@p.Name</a>
+                            <span class="tt-status-badge tt-status-@p.Status.ToString().ToLowerInvariant()">
+                                @(p.Status == ProjectStatus.Active ? "Aktiv" : "Abgeschlossen")
+                            </span>
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(p.Description))
+                    {
+                        <p class="tt-project-desc">@p.Description</p>
+                    }
+
+                    <div class="tt-project-foot">
+                        <span class="tt-project-hours"><i class="bi bi-hourglass"></i>
+                            @TimeFormat.Hm(_hoursByProject.GetValueOrDefault(p.Id))</span>
+                        <span class="tt-project-date">seit @p.CreatedAt.ToString("dd.MM.yyyy")</span>
+                    </div>
+
+                    <div class="tt-project-actions">
+                        <a href="projects/@p.Id" class="btn btn-sm"><i class="bi bi-box-arrow-in-right"></i> Details</a>
+                        <button class="btn btn-sm btn-warning" @onclick="() => EditProject(p)"><i class="bi bi-pencil"></i></button>
+                        <button class="btn btn-sm" @onclick="() => ToggleArchive(p)" title="@(p.IsArchived ? "Wiederherstellen" : "Archivieren")">
+                            <i class="bi @(p.IsArchived ? "bi-arrow-counterclockwise" : "bi-archive")"></i>
+                        </button>
+                        <button class="btn btn-sm btn-danger" @onclick="() => DeleteProject(p)"><i class="bi bi-trash"></i></button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<ProjectEditor Model="_editModel" OnSave="SaveProject" OnCancel="() => _editModel = null" />
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    private List<TimeProject>? _projects;
+    private Dictionary<int, int> _hoursByProject = new();
+    private string _search = "";
+    private string _statusFilter = "";
+    private bool _showArchived;
+    private TimeProject? _editModel;
+    private ConfirmDialog _confirm = default!;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        ProjectStatus? status = _statusFilter switch
+        {
+            "Active" => ProjectStatus.Active,
+            "Completed" => ProjectStatus.Completed,
+            _ => null
+        };
+        _projects = await Service.GetProjectsAsync(_showArchived, _search, status);
+        var hours = await Service.GetHoursPerProjectAsync();
+        _hoursByProject = hours.ToDictionary(h => h.ProjectId, h => h.Minutes);
+    }
+
+    private void NewProject() => _editModel = new TimeProject();
+
+    private void EditProject(TimeProject p) => _editModel = new TimeProject
+    {
+        Id = p.Id, Name = p.Name, Description = p.Description, Color = p.Color,
+        Icon = p.Icon, Status = p.Status, IsArchived = p.IsArchived, CreatedAt = p.CreatedAt
+    };
+
+    private async Task SaveProject(TimeProject project)
+    {
+        if (project.Id == 0)
+        {
+            await Service.AddProjectAsync(project);
+            Toasts.Success("Projekt angelegt.");
+        }
+        else
+        {
+            await Service.UpdateProjectAsync(project);
+            Toasts.Success("Projekt gespeichert.");
+        }
+        _editModel = null;
+        await Load();
+    }
+
+    private async Task ToggleArchive(TimeProject p)
+    {
+        await Service.SetArchivedAsync(p.Id, !p.IsArchived);
+        Toasts.Info(p.IsArchived ? "Projekt wiederhergestellt." : "Projekt archiviert.");
+        await Load();
+    }
+
+    private async Task DeleteProject(TimeProject p)
+    {
+        if (await _confirm.ShowAsync(
+            $"Projekt \"{p.Name}\" inkl. aller Zeiteinträge unwiderruflich löschen?", "Projekt löschen"))
+        {
+            await Service.DeleteProjectAsync(p.Id);
+            Toasts.Success("Projekt gelöscht.");
+            await Load();
+        }
+    }
+}

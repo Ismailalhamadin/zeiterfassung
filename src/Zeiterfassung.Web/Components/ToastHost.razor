@@ -1,0 +1,31 @@
+@implements IDisposable
+@inject ToastService Toasts
+
+@* Container für Toast-Benachrichtigungen. Wird einmalig im MainLayout eingebunden. *@
+<div class="tt-toast-host">
+    @foreach (var t in Toasts.Messages)
+    {
+        <div class="tt-toast tt-toast-@t.Level.ToString().ToLowerInvariant()" @key="t.Id">
+            <i class="bi @IconFor(t.Level) tt-toast-icon"></i>
+            <span class="tt-toast-text">@t.Text</span>
+            <button class="tt-toast-close" @onclick="() => Toasts.Remove(t.Id)" aria-label="Schließen">&times;</button>
+        </div>
+    }
+</div>
+
+@code {
+    protected override void OnInitialized() => Toasts.OnChange += OnToastsChanged;
+
+    // Toasts können aus einem Timer-Thread entfernt werden → auf den Renderer-Thread marshallen.
+    private void OnToastsChanged() => InvokeAsync(StateHasChanged);
+
+    private static string IconFor(ToastLevel level) => level switch
+    {
+        ToastLevel.Success => "bi-check-circle-fill",
+        ToastLevel.Warning => "bi-exclamation-triangle-fill",
+        ToastLevel.Error => "bi-x-circle-fill",
+        _ => "bi-info-circle-fill"
+    };
+
+    public void Dispose() => Toasts.OnChange -= OnToastsChanged;
+}

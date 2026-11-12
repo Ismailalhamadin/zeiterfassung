@@ -1,0 +1,264 @@
+@implements IDisposable
+@inject TimeTrackingService Service
+@inject ToastService Toasts
+
+@*
+    Live-Zeiterfassung mit Start / Pause / Beenden.
+    Der gesamte Zustand liegt serverseitig in der DB — daher läuft der Timer nach
+    Reload oder Browser-Neustart korrekt weiter. Die Anzeige wird jede Sekunde aus
+    StartedAt und den Pausen neu berechnet (kein clientseitiger Zählerstand).
+*@
+<div class="tt-timer @(_session is null ? "" : _session.Status == TimerStatus.Paused ? "is-paused" : "is-running")">
+    @if (_session is null)
+    {
+        <div class="tt-timer-idle">
+            <div class="tt-timer-idle-left">
+                <div class="tt-timer-clock">00:00:00</div>
+                <div class="tt-timer-status">Bereit</div>
+            </div>
+            <div class="tt-timer-idle-right">
+                <label class="tt-timer-project-label">Projekt (optional)</label>
+                <select class="form-control" @bind="_startProjectId">
+                    <option value="0">— später wählen —</option>
+                    @foreach (var p in _projects)
+                    {
+                        <option value="@p.Id">@p.Name</option>
+                    }
+                </select>
+                <button class="tt-btn-timer tt-btn-start" @onclick="Start">
+                    <i class="bi bi-play-fill"></i> Start
+                </button>
+            </div>
+        </div>
+    }
+    else
+    {
+        var now = DateTime.Now;
+        <div class="tt-timer-running">
+            <div class="tt-timer-main">
+                <div class="tt-timer-clock">@TimeFormat.Clock(_session.Worked(now))</div>
+                <div class="tt-timer-meta">
+                    <span class="tt-timer-status">
+                        @if (_session.Status == TimerStatus.Paused)
+                        {
+                            <span class="tt-badge tt-badge-paused"><i class="bi bi-pause-circle"></i> Pausiert</span>
+                        }
+                        else
+                        {
+                            <span class="tt-badge tt-badge-running"><i class="bi bi-record-circle"></i> Läuft</span>
+                        }
+                    </span>
+                    <span class="tt-timer-project">
+                        @if (_session.TimeProject is not null)
+                        {
+                            <span class="tt-dot" style="background:@_session.TimeProject.Color"></span>
+                            @_session.TimeProject.Name
+                        }
+                        else
+                        {
+                            <span class="tt-muted">Kein Projekt gewählt</span>
+                        }
+                    </span>
+                </div>
+                <div class="tt-timer-substats">
+                    <div><span class="tt-substat-label">Arbeitszeit</span> @TimeFormat.Hm((int)_session.Worked(now).TotalMinutes)</div>
+                    <div><span class="tt-substat-label">Pause</span> @TimeFormat.Clock(_session.TotalBreak(now))</div>
+                    <div><span class="tt-substat-label">Start</span> @_session.StartedAt.ToString("HH:mm")</div>
+                </div>
+            </div>
+            <div class="tt-timer-controls">
+                @if (_session.Status == TimerStatus.Running)
+                {
+                    <button class="tt-btn-timer tt-btn-pause" @onclick="Pause">
+                        <i class="bi bi-pause-fill"></i> Pause
+                    </button>
+                }
+                else
+                {
+                    <button class="tt-btn-timer tt-btn-resume" @onclick="Resume">
+                        <i class="bi bi-play-fill"></i> Fortsetzen
+                    </button>
+                }
+                <button class="tt-btn-timer tt-btn-stop" @onclick="OpenStopDialog">
+                    <i class="bi bi-stop-fill"></i> Beenden
+                </button>
+                <button class="tt-btn-cancel" @onclick="Cancel" title="Verwerfen (ohne Speichern)">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </div>
+        </div>
+    }
+</div>
+
+@* Dialog beim Beenden: Projekt + Beschreibung + Notizen. *@
+@if (_showStop)
+{
+    <div class="tt-modal-backdrop" @onclick="() => _showStop = false">
+        <div class="tt-modal" @onclick:stopPropagation="true">
+            <div class="tt-modal-head">
+                <h3><i class="bi bi-stop-circle"></i> Zeiterfassung speichern</h3>
+                <div class="tt-modal-sub">Erfasst: @TimeFormat.Hm(_stopWorkedMinutes) Arbeitszeit</div>
+            </div>
+            <div class="tt-modal-body">
+                <div class="form-group">
+                    <label>Projekt</label>
+                    <select class="form-control" @bind="_stopProjectId">
+                        <option value="0">— bitte wählen —</option>
+                        @foreach (var p in _projects)
+                        {
+                            <option value="@p.Id">@p.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Beschreibung</label>
+                    <textarea class="form-control" rows="3" @bind="_stopDescription"
+                              placeholder="Was wurde erledigt?"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Notizen (optional)</label>
+                    <textarea class="form-control" rows="2" @bind="_stopNotes"></textarea>
+                </div>
+            </div>
+            <div class="tt-modal-actions">
+                <button type="button" class="btn" @onclick="() => _showStop = false">Abbrechen</button>
+                <button type="button" class="btn btn-primary" disabled="@_saving" @onclick="ConfirmStop">
+                    @(_saving ? "Speichern…" : "Speichern")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>Wird nach jeder Zustandsänderung ausgelöst, damit übergeordnete Seiten (Dashboard) neu laden.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private List<TimeProject> _projects = new();
+    private TimerSession? _session;
+    private int _startProjectId;
+    private Timer? _ticker;
+
+    // Stop-Dialog
+    private bool _showStop;
+    private bool _saving;
+    private int _stopProjectId;
+    private string _stopDescription = "";
+    private string? _stopNotes;
+    private int _stopWorkedMinutes;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _projects = await Service.GetProjectsAsync(includeArchived: false, status: ProjectStatus.Active);
+        await ReloadSession();
+        // Jede Sekunde neu rendern, solange eine Session existiert.
+        _ticker = new Timer(_ => Tick(), null, 1000, 1000);
+    }
+
+    private bool _disposed;
+
+    private void Tick()
+    {
+        if (_disposed || _session is null) return;
+        // Nach dem Verwerfen des Circuits kann InvokeAsync werfen — bewusst ignorieren.
+        _ = InvokeAsync(StateHasChanged).ContinueWith(
+            _ => { }, TaskContinuationOptions.OnlyOnFaulted);
+    }
+
+    private async Task ReloadSession()
+    {
+        _session = await Service.GetActiveSessionAsync();
+    }
+
+    private async Task Start()
+    {
+        try
+        {
+            var pid = _startProjectId > 0 ? _startProjectId : (int?)null;
+            await Service.StartTimerAsync(pid);
+            await ReloadSession();
+            Toasts.Success("Zeiterfassung gestartet.");
+            await Notify();
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
+
+    private async Task Pause()
+    {
+        await Service.PauseTimerAsync();
+        await ReloadSession();
+        await Notify();
+    }
+
+    private async Task Resume()
+    {
+        await Service.ResumeTimerAsync();
+        await ReloadSession();
+        await Notify();
+    }
+
+    private void OpenStopDialog()
+    {
+        if (_session is null) return;
+        _stopProjectId = _session.TimeProjectId ?? 0;
+        _stopDescription = _session.Description ?? "";
+        _stopNotes = _session.Notes;
+        _stopWorkedMinutes = (int)_session.Worked(DateTime.Now).TotalMinutes;
+        _showStop = true;
+    }
+
+    private async Task ConfirmStop()
+    {
+        if (_stopProjectId <= 0)
+        {
+            Toasts.Warning("Bitte ein Projekt auswählen.");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_stopDescription))
+        {
+            Toasts.Warning("Bitte eine Beschreibung angeben.");
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            await Service.StopTimerAsync(_stopProjectId, _stopDescription, _stopNotes);
+            _showStop = false;
+            await ReloadSession();
+            Toasts.Success("Zeiteintrag gespeichert.");
+            await Notify();
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task Cancel()
+    {
+        await Service.CancelTimerAsync();
+        await ReloadSession();
+        Toasts.Info("Zeiterfassung verworfen.");
+        await Notify();
+    }
+
+    private async Task Notify()
+    {
+        if (OnChanged.HasDelegate)
+            await OnChanged.InvokeAsync();
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _ticker?.Dispose();
+    }
+}

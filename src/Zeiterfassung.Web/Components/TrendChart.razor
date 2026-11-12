@@ -1,0 +1,30 @@
+@* Arbeitszeitverlauf als SVG-Flächen-/Liniendiagramm. Dependency-frei. *@
+@if (Items is null || Items.Count == 0)
+{
+    <div class="tt-chart-empty">Noch keine Daten für den Verlauf.</div>
+}
+else
+{
+    <div class="tt-trend">
+        <svg viewBox="0 0 1000 220" preserveAspectRatio="none" class="tt-trend-svg" role="img" aria-label="Arbeitszeitverlauf">
+            <defs>
+                <linearGradient id="ttTrendFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.35" />
+                    <stop offset="100%" stop-color="var(--accent)" stop-opacity="0" />
+                </linearGradient>
+            </defs>
+            <path d="@ChartGeometry.AreaPath(Items)" fill="url(#ttTrendFill)" />
+            <polyline points="@ChartGeometry.LinePoints(Items)" fill="none" stroke="var(--accent)" stroke-width="2.5"
+                      vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round" />
+        </svg>
+        <div class="tt-trend-axis">
+            <span>@Items.First().Label</span>
+            <span>@Items[Items.Count / 2].Label</span>
+            <span>@Items.Last().Label</span>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public List<PeriodChartItem>? Items { get; set; }
+}

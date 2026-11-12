@@ -1,0 +1,150 @@
+@page "/calendar"
+@inject TimeTrackingService Service
+
+<PageTitle>Zeiterfassung · Kalender</PageTitle>
+
+<div class="tt-page">
+    <div class="admin-header">
+        <h1>Kalender</h1>
+        <div class="tt-header-actions">
+            <a href="./" class="btn"><i class="bi bi-speedometer2"></i> Dashboard</a>
+        </div>
+    </div>
+
+    <div class="tt-grid-cal">
+        <div class="tt-card">
+            <div class="tt-cal-head">
+                <button class="btn btn-sm" @onclick="PrevMonth"><i class="bi bi-chevron-left"></i></button>
+                <h3>@MonthTitle</h3>
+                <button class="btn btn-sm" @onclick="NextMonth"><i class="bi bi-chevron-right"></i></button>
+                <button class="btn btn-sm tt-today-btn" @onclick="GoToday">Heute</button>
+            </div>
+
+            <div class="tt-cal-grid">
+                @foreach (var wd in Weekdays)
+                {
+                    <div class="tt-cal-weekday">@wd</div>
+                }
+                @foreach (var cell in BuildCells())
+                {
+                    if (cell is null)
+                    {
+                        <div class="tt-cal-cell tt-cal-empty"></div>
+                    }
+                    else
+                    {
+                        var day = cell.Value;
+                        var info = _calendar.GetValueOrDefault(day);
+                        var isToday = day == DateOnly.FromDateTime(DateTime.Now);
+                        var isSel = day == _selected;
+                        <div class="tt-cal-cell @(isToday ? "is-today" : "") @(isSel ? "is-selected" : "") @(info is not null ? "has-data" : "")"
+                             @onclick="() => SelectDay(day)">
+                            <div class="tt-cal-daynum">@day.Day</div>
+                            @if (info is not null)
+                            {
+                                <div class="tt-cal-hours">@TimeFormat.Hm(info.TotalMinutes)</div>
+                                <div class="tt-cal-dots">
+                                    @foreach (var c in info.ProjectColors)
+                                    {
+                                        <span class="tt-dot" style="background:@c"></span>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+
+        @* ── Tagesdetails ─────────────────────────────────────────── *@
+        <div class="tt-card tt-cal-detail">
+            <div class="tt-card-head">
+                <h3><i class="bi bi-calendar-day"></i>
+                    @(_selected is { } s ? s.ToString("dddd, dd.MM.yyyy", De) : "Tag wählen")</h3>
+            </div>
+            @if (_selected is null)
+            {
+                <div class="tt-chart-empty">Wähle einen Tag im Kalender.</div>
+            }
+            else if (_dayEntries.Count == 0)
+            {
+                <div class="tt-chart-empty">Keine Einträge an diesem Tag.</div>
+            }
+            else
+            {
+                <div class="tt-day-total">Gesamt: <strong>@TimeFormat.Hm(_dayEntries.Sum(e => e.DurationMinutes))</strong></div>
+                <div class="tt-entry-list">
+                    @foreach (var e in _dayEntries)
+                    {
+                        <div class="tt-day-entry">
+                            <div class="tt-day-entry-head">
+                                <span class="tt-dot" style="background:@(e.TimeProject?.Color ?? "#999")"></span>
+                                <span class="tt-entry-project">@e.TimeProject?.Name</span>
+                                <span class="tt-entry-dur">@TimeFormat.Hm(e.DurationMinutes)</span>
+                            </div>
+                            <div class="tt-day-entry-time">@e.StartTime.ToString("HH:mm")–@e.EndTime.ToString("HH:mm")</div>
+                            <div class="tt-day-entry-desc">@e.Description</div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private static readonly System.Globalization.CultureInfo De =
+        System.Globalization.CultureInfo.GetCultureInfo("de-DE");
+    private static readonly string[] Weekdays = { "Mo", "Di", "Mi", "Do", "Fr", "Sa", "So" };
+
+    private int _year = DateTime.Now.Year;
+    private int _month = DateTime.Now.Month;
+    private Dictionary<DateOnly, CalendarDay> _calendar = new();
+    private DateOnly? _selected;
+    private List<TimeEntry> _dayEntries = new();
+
+    private string MonthTitle => new DateTime(_year, _month, 1).ToString("MMMM yyyy", De);
+
+    protected override async Task OnInitializedAsync() => await LoadMonth();
+
+    private async Task LoadMonth() => _calendar = await Service.GetCalendarAsync(_year, _month);
+
+    private IEnumerable<DateOnly?> BuildCells()
+    {
+        var first = new DateOnly(_year, _month, 1);
+        var offset = ((int)first.DayOfWeek + 6) % 7; // Montag = 0
+        var daysInMonth = DateTime.DaysInMonth(_year, _month);
+
+        for (var i = 0; i < offset; i++)
+            yield return null;
+        for (var d = 1; d <= daysInMonth; d++)
+            yield return new DateOnly(_year, _month, d);
+    }
+
+    private async Task PrevMonth()
+    {
+        var d = new DateOnly(_year, _month, 1).AddMonths(-1);
+        _year = d.Year; _month = d.Month;
+        await LoadMonth();
+    }
+
+    private async Task NextMonth()
+    {
+        var d = new DateOnly(_year, _month, 1).AddMonths(1);
+        _year = d.Year; _month = d.Month;
+        await LoadMonth();
+    }
+
+    private async Task GoToday()
+    {
+        _year = DateTime.Now.Year; _month = DateTime.Now.Month;
+        await LoadMonth();
+        await SelectDay(DateOnly.FromDateTime(DateTime.Now));
+    }
+
+    private async Task SelectDay(DateOnly day)
+    {
+        _selected = day;
+        _dayEntries = await Service.GetEntriesForDateAsync(day);
+    }
+}

@@ -1,0 +1,30 @@
+@* Horizontale Balken: Stunden pro Projekt, in Projektfarbe. *@
+@if (Items is null || Items.Count == 0)
+{
+    <div class="tt-chart-empty">Noch keine erfassten Zeiten.</div>
+}
+else
+{
+    <div class="tt-projbars">
+        @foreach (var item in Items)
+        {
+            var pct = Max > 0 ? (int)Math.Round(item.Minutes * 100.0 / Max) : 0;
+            <div class="tt-projbar-row">
+                <div class="tt-projbar-name">
+                    <span class="tt-dot" style="background:@item.Color"></span>
+                    @item.Name
+                </div>
+                <div class="tt-projbar-track">
+                    <div class="tt-projbar-fill" style="width:@(pct)%; background:@item.Color"></div>
+                </div>
+                <div class="tt-projbar-value">@TimeFormat.Hm(item.Minutes)</div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public List<ProjectChartItem>? Items { get; set; }
+
+    private int Max => Items is { Count: > 0 } ? Items.Max(i => i.Minutes) : 0;
+}
