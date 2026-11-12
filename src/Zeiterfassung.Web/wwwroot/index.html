@@ -27,7 +27,13 @@
         <span class="dismiss">×</span>
     </div>
     <script src="js/demo.js"></script>
-    <script src="_framework/blazor.webassembly#[.{fingerprint}].js"></script>
+    <script src="_framework/blazor.webassembly#[.{fingerprint}].js" autostart="false"></script>
+    <script>
+        // Die Oberfläche ist deutsch, egal in welcher Sprache der Browser steht. Die Kultur muss beim Start
+        // gesetzt werden (nicht später in Program.cs): Blazor lädt dazu die passende ICU-Datei (de) und
+        // verbietet sonst jede Änderung der Startkultur.
+        Blazor.start({ applicationCulture: 'de-DE' });
+    </script>
 </body>
 
 </html>
